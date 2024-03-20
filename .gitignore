@@ -100,3 +100,7 @@ submissions/
 external/
 *.npz
 *.npy
+
+# pace
+*.sbatch
+*.out
