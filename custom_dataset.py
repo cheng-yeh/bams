@@ -16,7 +16,7 @@ from bams.data import KeypointsDataset
 from bams.models import BAMS
 from bams import HoALoss
 
-
+# Customized for Alice dataset
 def load_data(f, path):
     segment = 60 # in seconds
     fz = 500
@@ -42,7 +42,7 @@ def load_data(f, path):
     return keypoints
 
 
-def train(model, device, loader, optimizer, criterion, writer, step, log_every_step):
+def train_loop(model, device, loader, optimizer, criterion, writer, step, log_every_step):
     model.train()
 
     for data in tqdm(loader, position=1, leave=False):
@@ -124,8 +124,23 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=4e-5)
     parser.add_argument("--log_every_step", type=int, default=50)
+    parser.add_argument(
+        "--job",
+        default="train",
+        const="train",
+        nargs="?",
+        choices=["train", "compute_representations"],
+        help="select task",
+    )
     args = parser.parse_args()
 
+    if args.job == "train":
+        train(args)
+    elif args.job == "compute_representations":
+        compute_representations(args)
+
+def train(args):
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataset
@@ -177,7 +192,7 @@ def main():
 
     step = 0
     for epoch in tqdm(range(1, args.epochs + 1), position=0):
-        step = train(
+        step = train_loop(
             model,
             device,
             train_loader,
@@ -192,6 +207,106 @@ def main():
         if epoch % 50 == 0:
             torch.save(model.state_dict(), model_name + ".pt")
 
+def compute_representations(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    keypoints, split_mask, batch = load_mice_triplet(args.data_root)
+
+    # dataset
+    if not Dataset.cache_is_available(args.cache_path, args.hoa_bins):
+        print("Processing data...")
+        input_feats, target_feats, ignore_frames = mouse_feature_extractor(keypoints)
+    else:
+        print("No need to process data")
+        input_feats = target_feats = ignore_frames = None
+
+    # only use
+
+    dataset = Dataset(
+        input_feats=input_feats,
+        target_feats=target_feats,
+        ignore_frames=ignore_frames,
+        cache_path=args.cache_path,
+        hoa_bins=args.hoa_bins,
+        hoa_window=30,
+    )
+
+    print("Number of sequences:", len(dataset))
+
+    # build model
+    model = BAMS(
+        input_size=dataset.input_size,
+        short_term=dict(num_channels=(64, 64, 32, 32), kernel_size=3),
+        long_term=dict(num_channels=(64, 64, 64, 32, 32), kernel_size=3, dilation=4),
+        predictor=dict(
+            hidden_layers=(-1, 256, 512, 512, dataset.target_size * args.hoa_bins),
+        ),  # frame rate = 30, 6 steps = 200ms
+    ).to(device)
+
+    if args.ckpt_path is None:
+        raise ValueError("Please specify a checkpoint path")
+
+    # load checkpoint
+    model.load_state_dict(torch.load(args.ckpt_path, map_location=device))
+    model.eval()
+
+    loader = DataLoader(
+        dataset,
+        shuffle=False,
+        drop_last=False,
+        batch_size=32,
+        num_workers=16,
+        pin_memory=True,
+    )
+
+    # compute representations
+    short_term_emb, long_term_emb = [], []
+
+    for data in loader:
+        input = data["input"].float().to(device)  # (B, N, L)
+
+        with torch.inference_mode():
+            embs, _, _ = model(input)
+
+            short_term_emb.append(embs["short_term"].detach().cpu())
+            long_term_emb.append(embs["long_term"].detach().cpu())
+
+    short_term_emb = torch.cat(short_term_emb)
+    long_term_emb = torch.cat(long_term_emb)
+
+    embs = torch.cat([short_term_emb, long_term_emb], dim=2)
+
+    # the learned representations are at the individual mouse level, we want to compute
+    # the mouse triplet-level representation
+    # embs: (B, L, N)
+    batch_size, seq_len, num_feats = embs.size()
+    embs = embs.reshape(-1, 3, seq_len, num_feats)
+
+    embs_mean = embs.mean(1)
+    embs_max = embs.max(1).values
+    embs_min = embs.min(1).values
+
+    embs = torch.cat([embs_mean, embs_max - embs_min], dim=-1)
+
+    # normalize embeddings
+    mean, std = embs.mean(0, keepdim=True), embs.std(0, unbiased=False, keepdim=True)
+    embs = (embs - mean) / std
+
+    frame_number_map = np.load(
+        os.path.join(args.data_root, "mouse_triplet_frame_number_map.npy"),
+        allow_pickle=True,
+    ).item()
+
+    # only take submission frames
+    embs = embs.numpy()[~split_mask].reshape(-1, embs.shape[-1])
+
+    submission_dict = dict(
+        frame_number_map=frame_number_map,
+        embeddings=embs,
+    )
+
+    model_name = os.path.splitext(os.path.basename(args.ckpt_path))[0]
+    np.save(f"{model_name}_submission.npy", submission_dict)
 
 if __name__ == "__main__":
     main()

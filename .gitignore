@@ -104,3 +104,6 @@ external/
 # pace
 *.sbatch
 *.out
+
+# training output
+*.pt
