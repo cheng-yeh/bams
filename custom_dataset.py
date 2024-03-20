@@ -17,8 +17,28 @@ from bams.models import BAMS
 from bams import HoALoss
 
 
-def load_data(path):
-    keypoints = ...
+def load_data(f, path):
+    segment = 60 # in seconds
+    fz = 500
+    sample_period = int(f.split(".")[0].split("samp")[-1])
+    step = fz // sample_period * 10 # 10 second as a step
+    
+    # load raw train data (with annotations for 2 tasks)
+    data_train = np.load(
+        os.path.join(path, f), allow_pickle=True
+    )
+
+    print(data_train.keys())
+    min_len = min(map(lambda x: x.shape[0], data_train.values()))
+    print(min_len)
+    total_sample = segment * sample_period
+    keypoints = np.array([[data[start * step : start * step + total_sample] 
+                           for start in range((min_len - total_sample) // step)] 
+                          for data in data_train.values()])
+
+    keypoints = keypoints.reshape(keypoints.shape[0] * keypoints.shape[1], keypoints.shape[2], keypoints.shape[3])
+    print(keypoints.shape)
+
     return keypoints
 
 
@@ -94,8 +114,9 @@ def train(model, device, loader, optimizer, criterion, writer, step, log_every_s
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_root", type=str, default="./data/mabe")
-    parser.add_argument("--cache_path", type=str, default="./data/mabe/custom_dataset")
+    parser.add_argument("--input_file", type=str, default="24chans.pkl")
+    parser.add_argument("--data_root", type=str, default="./data/alice")
+    parser.add_argument("--cache_path", type=str, default="./data/alice/custom_dataset")
     parser.add_argument("--hoa_bins", type=int, default=32)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=16)
@@ -108,7 +129,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataset
-    keypoints = load_data(args.data_root)
+    keypoints = load_data(args.input_file, args.data_root)
 
     dataset = KeypointsDataset(
         keypoints=keypoints,

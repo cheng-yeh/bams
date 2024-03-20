@@ -22,22 +22,37 @@ from bams import HoALoss
 #############
 def load_mice_triplet(path):
     # load raw train data (with annotations for 2 tasks)
+    print("Loading training data...")
     data_train = np.load(
         os.path.join(path, "mouse_triplet_train.npy"), allow_pickle=True
     ).item()
+    print("Keys of raw training data: ", data_train.keys())
+    print("Shape of vocabulary: ", len(data_train["vocabulary"]))
+    print(data_train["vocabulary"])
+    print("Len of sequences: ", len(data_train["sequences"]))
+    tmp1 = data_train["sequences"]["7MXIWNKUU6VTNGAUDICW"]["keypoints"]
+    tmp2 = data_train["sequences"]["7MXIWNKUU6VTNGAUDICW"]["annotations"]
+    print(np.array(tmp1).shape)
+    print(tmp1[0])
+    print(np.array(tmp2).shape)
+    print(np.mean(tmp2))
     sequence_ids_train, sequence_data_train = zip(*data_train["sequences"].items())
     keypoints_train = np.stack([data["keypoints"] for data in sequence_data_train])
+    print("Shape of training data: ", keypoints_train.shape)
 
     # load submission data (no annoations)
+    print("Loading testing data...")
     data_submission = np.load(
         os.path.join(path, "mouse_triplet_test.npy"), allow_pickle=True
     ).item()
+    print("Shape of raw testing data: ", data_submission.shape)
     sequence_ids_submission, sequence_data_submission = zip(
         *data_submission["sequences"].items()
     )
     keypoints_submission = np.stack(
         [data["keypoints"] for data in sequence_data_submission]
     )
+    print("Shape of testing data: ", keypoints_submission.shape)
 
     # concatenate train and submission data
     sequence_ids = np.concatenate([sequence_ids_train, sequence_ids_submission], axis=0)
@@ -51,6 +66,8 @@ def load_mice_triplet(path):
     keypoints = keypoints.transpose((0, 2, 1, 3, 4))
     keypoints = keypoints.reshape((-1, sequence_length, num_keypoints, 2))
     batch = np.repeat(np.arange(num_samples), num_mice)
+
+    print("Shape of overall data: ", keypoints.shape)
 
     return keypoints, split_mask, batch
 

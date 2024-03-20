@@ -1,5 +1,5 @@
-torch==2.0.0
-numpy==1.23.4
+torch==2.2.0
+numpy
 tqdm==4.48.2
 tensorboard==2.11.2
 einops==0.6.1
