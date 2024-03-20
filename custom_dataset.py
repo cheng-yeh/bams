@@ -189,7 +189,7 @@ def main():
         )
         scheduler.step()
 
-        if epoch % 100 == 0:
+        if epoch % 50 == 0:
             torch.save(model.state_dict(), model_name + ".pt")
 
 
