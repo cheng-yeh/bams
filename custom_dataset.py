@@ -17,29 +17,53 @@ from bams.models import BAMS
 from bams import HoALoss
 
 # Customized for Alice dataset
-def load_data(f, path):
+def load_data(path, f1, f2):
     segment = 60 # in seconds
     fz = 500
-    sample_period = int(f.split(".")[0].split("samp")[-1])
+    sample_period = int(f1.split(".")[0].split("samp")[-1])
     step = fz // sample_period * 10 # 10 second as a step
     
     # load raw train data (with annotations for 2 tasks)
     data_train = np.load(
-        os.path.join(path, f), allow_pickle=True
+        os.path.join(path, f1), allow_pickle=True
+    )
+    data_submission = np.load(
+        os.path.join(path, f2), allow_pickle=True
     )
 
-    print(data_train.keys())
-    min_len = min(map(lambda x: x.shape[0], data_train.values()))
-    print(min_len)
+    print("Subject ids in training data: ", data_train.keys())
+    print("Subject ids in submission data: ", data_submission.keys())
+
+    train_values = list(data_train.values())
+    submission_values = list(data_submission.values())
+    all_values = train_values + submission_values
+
+    min_len = min(map(lambda x: x.shape[0], all_values))
+    print("Minimum sequence length: ", min_len)
+
     total_sample = segment * sample_period
-    keypoints = np.array([[data[start * step : start * step + total_sample] 
-                           for start in range((min_len - total_sample) // step)] 
-                          for data in data_train.values()])
 
-    keypoints = keypoints.reshape(keypoints.shape[0] * keypoints.shape[1], keypoints.shape[2], keypoints.shape[3])
-    print(keypoints.shape)
+    keypoints_train = np.array([[data[start * step : start * step + total_sample] 
+                                 for start in range((min_len - total_sample) // step)] 
+                                for data in train_values])
+    keypoints_submission = np.array([[data[start * step : start * step + total_sample] 
+                                      for start in range((min_len - total_sample) // step)] 
+                                     for data in submission_values])
+    num_subject_train, num_sequence, sequence_len, num_channel = keypoints_train.shape
+    num_subject_submission, _, _, _ = keypoints_submission.shape
+    keypoints_train = keypoints_train.reshape((-1, sequence_len, num_channel))
+    keypoints_submission = keypoints_submission.reshape((-1, sequence_len, num_channel))
+    keypoints = np.concatenate([keypoints_train, keypoints_submission], axis=0)
+    
+    split_mask = np.ones(len(keypoints), dtype=bool)
+    split_mask[-num_subject_submission*num_sequence:] = False
 
-    return keypoints
+    print("Shape of keypoints: ", keypoints.shape)
+    print("Shape, of split mask: ", split_mask.shape)
+
+
+
+    return keypoints, split_mask
 
 
 def train_loop(model, device, loader, optimizer, criterion, writer, step, log_every_step):
@@ -114,7 +138,8 @@ def train_loop(model, device, loader, optimizer, criterion, writer, step, log_ev
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_file", type=str, default="24chans.pkl")
+    parser.add_argument("--input_train", type=str, default="24chans.pkl")
+    parser.add_argument("--input_submission", type=str, default="24chans.pkl")
     parser.add_argument("--data_root", type=str, default="./data/alice")
     parser.add_argument("--cache_path", type=str, default="./data/alice/custom_dataset")
     parser.add_argument("--hoa_bins", type=int, default=32)
@@ -124,6 +149,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=4e-5)
     parser.add_argument("--log_every_step", type=int, default=50)
+    parser.add_argument("--ckpt_path", type=str, default=None)
     parser.add_argument(
         "--job",
         default="train",
@@ -144,7 +170,11 @@ def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataset
-    keypoints = load_data(args.input_file, args.data_root)
+    if not KeypointsDataset.cache_is_available(args.cache_path, args.hoa_bins):
+        print("Processing data...")
+        keypoints, split_mask = load_data(args.data_root, args.input_train, args.input_submission)
+    else:
+        print("No need to process data")
 
     dataset = KeypointsDataset(
         keypoints=keypoints,
@@ -210,25 +240,22 @@ def train(args):
 def compute_representations(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    keypoints, split_mask, batch = load_mice_triplet(args.data_root)
+    keypoints, split_mask = load_data(args.data_root, args.input_train, args.input_submission)
 
     # dataset
-    if not Dataset.cache_is_available(args.cache_path, args.hoa_bins):
+    if not KeypointsDataset.cache_is_available(args.cache_path, args.hoa_bins):
         print("Processing data...")
-        input_feats, target_feats, ignore_frames = mouse_feature_extractor(keypoints)
+        keypoints, split_mask = load_data(args.data_root, args.input_train, args.input_submission)
     else:
         print("No need to process data")
-        input_feats = target_feats = ignore_frames = None
 
     # only use
 
-    dataset = Dataset(
-        input_feats=input_feats,
-        target_feats=target_feats,
-        ignore_frames=ignore_frames,
-        cache_path=args.cache_path,
+    dataset = KeypointsDataset(
+        keypoints=keypoints,
         hoa_bins=args.hoa_bins,
-        hoa_window=30,
+        cache_path=args.cache_path,
+        cache=False,
     )
 
     print("Number of sequences:", len(dataset))
@@ -276,11 +303,8 @@ def compute_representations(args):
 
     embs = torch.cat([short_term_emb, long_term_emb], dim=2)
 
-    # the learned representations are at the individual mouse level, we want to compute
-    # the mouse triplet-level representation
     # embs: (B, L, N)
     batch_size, seq_len, num_feats = embs.size()
-    embs = embs.reshape(-1, 3, seq_len, num_feats)
 
     embs_mean = embs.mean(1)
     embs_max = embs.max(1).values
@@ -293,7 +317,7 @@ def compute_representations(args):
     embs = (embs - mean) / std
 
     frame_number_map = np.load(
-        os.path.join(args.data_root, "mouse_triplet_frame_number_map.npy"),
+        os.path.join(args.data_root, "alice_frame_number_map.npy"),
         allow_pickle=True,
     ).item()
 

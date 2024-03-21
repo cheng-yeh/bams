@@ -33,10 +33,10 @@ def load_mice_triplet(path):
     tmp1 = data_train["sequences"]["7MXIWNKUU6VTNGAUDICW"]["keypoints"]
     tmp2 = data_train["sequences"]["7MXIWNKUU6VTNGAUDICW"]["annotations"]
     print(np.array(tmp1).shape)
-    print(tmp1[0])
     print(np.array(tmp2).shape)
     print(np.mean(tmp2))
     sequence_ids_train, sequence_data_train = zip(*data_train["sequences"].items())
+    print("id: ", sequence_ids_train)
     keypoints_train = np.stack([data["keypoints"] for data in sequence_data_train])
     print("Shape of training data: ", keypoints_train.shape)
 
@@ -49,6 +49,7 @@ def load_mice_triplet(path):
     sequence_ids_submission, sequence_data_submission = zip(
         *data_submission["sequences"].items()
     )
+    print("id: ", sequence_ids_submission)
     keypoints_submission = np.stack(
         [data["keypoints"] for data in sequence_data_submission]
     )
