@@ -124,6 +124,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=4e-5)
     parser.add_argument("--log_every_step", type=int, default=50)
+    parser.add_argument("--ckpt_path", type=str, default=None)
     parser.add_argument(
         "--job",
         default="train",
@@ -209,6 +210,8 @@ def train(args):
 
 def compute_representations(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    keypoints = load_data(args.input_file, args.data_root)
 
     keypoints, split_mask, batch = load_mice_triplet(args.data_root)
 
