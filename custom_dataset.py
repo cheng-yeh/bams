@@ -327,6 +327,11 @@ def compute_representations(args):
     mean, std = embs.mean(0, keepdim=True), embs.std(0, unbiased=False, keepdim=True)
     embs = (embs - mean) / std
 
+    np.save(f"{output_root}/{model_name}_targets.npy", targets)
+    np.save(f"{output_root}/{model_name}_hoa_preds.npy", hoa_preds)
+    np.save(f"{output_root}/{model_name}_hoa_losses.npy", hoa_losses)
+    np.save(f"{output_root}/{model_name}_embs.npy", embs)
+
     # No need for submission
     '''
     frame_number_map = np.load(
