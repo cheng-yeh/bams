@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--input_train", type=str, default="24chans.pkl")
     parser.add_argument("--input_submission", type=str, default="24chans.pkl")
     parser.add_argument("--data_root", type=str, default="./data/alice")
+    parser.add_argument("--output_root", type=str, default="./output/alice")
     parser.add_argument("--cache_path", type=str, default="./data/alice/custom_dataset")
     parser.add_argument("--hoa_bins", type=int, default=32)
     parser.add_argument("--batch_size", type=int, default=32)
@@ -286,17 +287,30 @@ def compute_representations(args):
     )
 
     # compute representations
+    hoa_losses, targets, hoa_preds = [], [], []
     short_term_emb, long_term_emb = [], []
 
     for data in loader:
         input = data["input"].float().to(device)  # (B, N, L)
+        target = data["target_hist"].float().to(device)
+        ignore_weights = data["ignore_weights"].to(device)
+
+        targets.append(target.detach().cpu())
 
         with torch.inference_mode():
-            embs, _, _ = model(input)
+            embs, hoa_pred, byol_pred = model(input)
 
+            # prediction task
+            hoa_loss = criterion(target, hoa_pred, ignore_weights)
+
+            hoa_preds.append(hoa_pred.detach().cpu())
+            hoa_losses.append(hoa_loss.detach().cpu())
             short_term_emb.append(embs["short_term"].detach().cpu())
             long_term_emb.append(embs["long_term"].detach().cpu())
 
+    targets = torch.cat(targets)
+    hoa_preds = torch.cat(hoa_preds)
+    hoa_losses = torch.cat(hoa_losses)
     short_term_emb = torch.cat(short_term_emb)
     long_term_emb = torch.cat(long_term_emb)
 
