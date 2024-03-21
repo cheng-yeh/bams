@@ -61,8 +61,6 @@ def load_data(path, f1, f2):
     print("Shape of keypoints: ", keypoints.shape)
     print("Shape, of split mask: ", split_mask.shape)
 
-
-
     return keypoints, split_mask
 
 
@@ -329,10 +327,14 @@ def compute_representations(args):
     mean, std = embs.mean(0, keepdim=True), embs.std(0, unbiased=False, keepdim=True)
     embs = (embs - mean) / std
 
+    # No need for submission
+    '''
     frame_number_map = np.load(
         os.path.join(args.data_root, "alice_frame_number_map.npy"),
         allow_pickle=True,
     ).item()
+
+    print(frame_numer_map)
 
     # only take submission frames
     embs = embs.numpy()[~split_mask].reshape(-1, embs.shape[-1])
@@ -344,6 +346,7 @@ def compute_representations(args):
 
     model_name = os.path.splitext(os.path.basename(args.ckpt_path))[0]
     np.save(f"{model_name}_submission.npy", submission_dict)
+    '''
 
 if __name__ == "__main__":
     main()
