@@ -287,6 +287,8 @@ def compute_representations(args):
     # compute representations
     hoa_losses, targets, hoa_preds = [], [], []
     short_term_emb, long_term_emb = [], []
+    
+    criterion = HoALoss(hoa_bins=args.hoa_bins, skip_frames=100)
 
     for data in loader:
         input = data["input"].float().to(device)  # (B, N, L)
@@ -308,7 +310,6 @@ def compute_representations(args):
 
     targets = torch.cat(targets)
     hoa_preds = torch.cat(hoa_preds)
-    hoa_losses = torch.cat(hoa_losses)
     short_term_emb = torch.cat(short_term_emb)
     long_term_emb = torch.cat(long_term_emb)
 
@@ -326,11 +327,11 @@ def compute_representations(args):
     # normalize embeddings
     mean, std = embs.mean(0, keepdim=True), embs.std(0, unbiased=False, keepdim=True)
     embs = (embs - mean) / std
-
-    np.save(f"{output_root}/{model_name}_targets.npy", targets)
-    np.save(f"{output_root}/{model_name}_hoa_preds.npy", hoa_preds)
-    np.save(f"{output_root}/{model_name}_hoa_losses.npy", hoa_losses)
-    np.save(f"{output_root}/{model_name}_embs.npy", embs)
+    model_name = args.ckpt_path.split(".")[0]
+    np.save(f"{args.output_root}/{model_name}_targets.npy", targets)
+    np.save(f"{args.output_root}/{model_name}_hoa_preds.npy", hoa_preds)
+    np.save(f"{args.output_root}/{model_name}_hoa_losses.npy", hoa_losses)
+    np.save(f"{args.output_root}/{model_name}_embs.npy", embs)
 
     # No need for submission
     '''
