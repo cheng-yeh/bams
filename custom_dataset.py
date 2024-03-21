@@ -144,7 +144,7 @@ def main():
     parser.add_argument("--cache_path", type=str, default="./data/alice/custom_dataset")
     parser.add_argument("--hoa_bins", type=int, default=32)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--num_workers", type=int, default=16)
+    parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight_decay", type=float, default=4e-5)
@@ -188,6 +188,7 @@ def train(args):
     train_loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
+        shuffle=True,
         drop_last=True,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -257,15 +258,15 @@ def compute_representations(args):
     )
 
     print("Number of sequences:", len(dataset))
-
+    
     # build model
     model = BAMS(
         input_size=dataset.input_size,
-        short_term=dict(num_channels=(64, 64, 32, 32), kernel_size=3),
-        long_term=dict(num_channels=(64, 64, 64, 32, 32), kernel_size=3, dilation=4),
+        short_term=dict(num_channels=(64, 64, 64, 64), kernel_size=3),
+        long_term=dict(num_channels=(64, 64, 64, 64, 64), kernel_size=3, dilation=4),
         predictor=dict(
-            hidden_layers=(-1, 256, 512, 512, dataset.target_size * args.hoa_bins),
-        ),  # frame rate = 30, 6 steps = 200ms
+            hidden_layers=(-1, 256, 512, 512, dataset.target_size * args.hoa_bins)
+        ),
     ).to(device)
 
     if args.ckpt_path is None:
@@ -279,8 +280,8 @@ def compute_representations(args):
         dataset,
         shuffle=False,
         drop_last=False,
-        batch_size=32,
-        num_workers=16,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
         pin_memory=True,
     )
 
