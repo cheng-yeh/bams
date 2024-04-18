@@ -102,7 +102,6 @@ external/
 *.npy
 
 # pace
-*.sbatch
 *.out
 
 # training output

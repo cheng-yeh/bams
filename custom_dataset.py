@@ -289,6 +289,8 @@ def compute_representations(args):
     short_term_emb, long_term_emb = [], []
     
     criterion = HoALoss(hoa_bins=args.hoa_bins, skip_frames=100)
+    record_limit = 1
+    count = 0
 
     for data in loader:
         input = data["input"].float().to(device)  # (B, N, L)
@@ -307,6 +309,11 @@ def compute_representations(args):
             hoa_losses.append(hoa_loss.detach().cpu())
             short_term_emb.append(embs["short_term"].detach().cpu())
             long_term_emb.append(embs["long_term"].detach().cpu())
+
+        count += 1
+        print("count: ", count)
+        if count == record_limit:
+            break
 
     targets = torch.cat(targets)
     hoa_preds = torch.cat(hoa_preds)
